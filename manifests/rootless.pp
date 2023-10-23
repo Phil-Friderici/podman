@@ -1,6 +1,8 @@
 # @summary Enable a given user to run rootless podman containers as a systemd user service.
 #
 define podman::rootless {
+  include podman
+
   exec { "loginctl_linger_${name}":
     path     => '/sbin:/usr/sbin:/bin:/usr/bin',
     command  => "loginctl enable-linger ${name}",
@@ -9,13 +11,14 @@ define podman::rootless {
     require  => User[$name],
     notify   => Service['podman systemd-logind'],
   }
-  ensure_resource('Service', 'podman systemd-logind', { name => 'systemd-logind.service', ensure => 'running' } )
+
+  ensure_resource('Service', 'podman systemd-logind', { name => 'systemd-logind.service', ensure => 'running' })
 
   # Ensure the systemd directory tree exists for user services
   ensure_resource('File', [
-    "${User[$name]['home']}/.config",
-    "${User[$name]['home']}/.config/systemd",
-    "${User[$name]['home']}/.config/systemd/user"
+      "${User[$name]['home']}/.config",
+      "${User[$name]['home']}/.config/systemd",
+      "${User[$name]['home']}/.config/systemd/user"
     ], {
       ensure  => directory,
       owner   => $name,
@@ -41,15 +44,12 @@ define podman::rootless {
       command     => 'systemctl --user enable --now podman.socket',
       path        => $facts['path'],
       user        => $name,
+      unless      => 'systemctl --user status podman.socket',
+      require     => [Exec["loginctl_linger_${name}"], Exec["start_${name}.slice"]],
       environment => [
         "HOME=${User[$name]['home']}",
         "XDG_RUNTIME_DIR=/run/user/${User[$name]['uid']}",
         "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${User[$name]['uid']}/bus",
-      ],
-      unless      => 'systemctl --user status podman.socket',
-      require     => [
-        Exec["loginctl_linger_${name}"],
-        Exec["start_${name}.slice"],
       ],
     }
   }

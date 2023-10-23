@@ -1,6 +1,6 @@
 require 'spec_helper'
 
-describe 'podman::pod' do
+describe 'podman::network' do
   let(:title) { 'testing-title' }
 
   on_supported_os.each do |os, os_facts|
@@ -10,12 +10,12 @@ describe 'podman::pod' do
       it { is_expected.to compile }
 
       it do
-        is_expected.to contain_exec('create_pod_testing-title').only_with(
+        is_expected.to contain_exec('podman_create_network_testing-title').only_with(
           {
-            'command'  => "podman pod create  --name 'testing-title'",
-            'unless'   => 'podman pod exists testing-title',
-            'path'     => '/sbin:/usr/sbin:/bin:/usr/bin',
-            'provider' => 'shell',
+            'command' => 'podman network create testing-title --driver bridge',
+            'unless'  => 'podman network exists testing-title',
+            'path'    => '/sbin:/usr/sbin:/bin:/usr/bin',
+            'require' => [],
           },
         )
       end
@@ -39,12 +39,12 @@ describe 'podman::pod' do
       let(:params) { { ensure: 'absent' } }
 
       it do
-        is_expected.to contain_exec('remove_pod_testing-title').only_with(
+        is_expected.to contain_exec('podman_remove_network_testing-title').only_with(
           {
-            'command'  => 'podman pod rm testing-title',
-            'unless'   => 'podman pod exists testing-title; test $? -eq 1',
-            'path'     => '/sbin:/usr/sbin:/bin:/usr/bin',
-            'provider' => 'shell',
+            'command' => 'podman network rm testing-title',
+            'onlyif'  => 'podman network exists testing-title',
+            'path'    => '/sbin:/usr/sbin:/bin:/usr/bin',
+            'require' => [],
           },
         )
       end
@@ -66,16 +66,15 @@ describe 'podman::pod' do
       end
 
       it do
-        is_expected.to contain_exec('remove_pod_testing-title').only_with(
+        is_expected.to contain_exec('podman_remove_network_testing-title').only_with(
           {
-            'command'     => 'podman pod rm testing-title',
-            'unless'      => 'podman pod exists testing-title; test $? -eq 1',
+            'command'     => 'podman network rm testing-title',
+            'onlyif'      => 'podman network exists testing-title',
             'path'        => '/sbin:/usr/sbin:/bin:/usr/bin',
+            'require'     => ['Podman::Rootless[dummy]', 'Service[podman systemd-logind]'],
+            'user'        => 'dummy',
             'environment' => ['HOME=/home/dummy', 'XDG_RUNTIME_DIR=/run/user/3333', 'DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/3333/bus'],
             'cwd'         => '/home/dummy',
-            'provider'    => 'shell',
-            'user'        => 'dummy',
-            'require'     => ['Podman::Rootless[dummy]', 'Service[podman systemd-logind]'],
           },
         )
       end
@@ -88,6 +87,7 @@ describe 'podman::pod' do
       it { is_expected.to contain_file('/home/dummy/.config/systemd/user') } # from podman::rootless
       it { is_expected.to contain_service('podman systemd-logind') }         # from podman::rootless
       it { is_expected.to contain_class('podman') }                          # from podman::rootless
+      it { is_expected.to contain_service('podman.socket') }                 # from podman
       it { is_expected.to contain_file('/etc/containers/nodocker') }         # from podman
       it { is_expected.to contain_package('buildah') }                       # from podman
       it { is_expected.to contain_package('podman-compose') }                # from podman
@@ -99,25 +99,116 @@ describe 'podman::pod' do
       else
         it { is_expected.to contain_package('systemd-container') }           # from podman
       end
+
       if os_facts[:os]['selinux']['enabled'] == true
-        it { is_expected.to contain_selboolean('container_manage_cgroup') }  # from podman
+        it { is_expected.to contain_selboolean('container_manage_cgroup') } # from podman
       end
-      it { is_expected.to contain_service('podman.socket') }                 # from podman
     end
 
-    context 'with flags set to valid hash' do
-      let(:params) { { flags: { test1: ['value1'], test2: 'value2' } } }
+    context 'with driver set to valid macvlan' do
+      let(:params) { { driver: 'macvlan' } }
 
       it do
-        is_expected.to contain_exec('create_pod_testing-title').with(
+        is_expected.to contain_exec('podman_create_network_testing-title').with(
           {
-            'command' => "podman pod create  --name 'testing-title'  --test1 'value1' --test2 'value2'",
+            'command' => 'podman network create testing-title --driver macvlan',
           },
         )
       end
     end
 
-    context 'with user set to valid value testing' do
+    # disable_dns currently has no functionality
+    context 'with disable_dns set to valid true' do
+      let(:params) { { disable_dns: true } }
+
+      it { is_expected.to compile }
+    end
+
+    context 'with opts set to valid array [test, ing]' do
+      let(:params) { { opts: ['test', 'ing'] } }
+
+      it do
+        is_expected.to contain_exec('podman_create_network_testing-title').with(
+          {
+            'command' => 'podman network create testing-title --driver bridge --flag test --flag ing',
+          },
+        )
+      end
+    end
+
+    context 'with gateway set to valid testing' do
+      let(:params) { { gateway: 'testing' } }
+
+      it do
+        is_expected.to contain_exec('podman_create_network_testing-title').with(
+          {
+            'command' => 'podman network create testing-title --driver bridge --gateway testing',
+          },
+        )
+      end
+    end
+
+    context 'with internal set to valid true' do
+      let(:params) { { internal: true } }
+
+      it do
+        is_expected.to contain_exec('podman_create_network_testing-title').with(
+          {
+            'command' => 'podman network create testing-title --driver bridge --internal',
+          },
+        )
+      end
+    end
+
+    context 'with ip_range set to valid testing' do
+      let(:params) { { ip_range: 'testing' } }
+
+      it do
+        is_expected.to contain_exec('podman_create_network_testing-title').with(
+          {
+            'command' => 'podman network create testing-title --driver bridge --ip-range testing',
+          },
+        )
+      end
+    end
+
+    context 'with labels set to valid hash' do
+      let(:params) { { labels: { test: 'ing', test2: 'ing2' } } }
+
+      it do
+        is_expected.to contain_exec('podman_create_network_testing-title').with(
+          {
+            'command' => "podman network create testing-title --driver bridge --label test 'ing' --label test2 'ing2'",
+          },
+        )
+      end
+    end
+
+    context 'with subnet set to valid testing' do
+      let(:params) { { subnet: 'testing' } }
+
+      it do
+        is_expected.to contain_exec('podman_create_network_testing-title').with(
+          {
+            'command' => 'podman network create testing-title --driver bridge --subnet testing',
+          },
+        )
+      end
+    end
+
+    context 'with ipv6 set to valid true' do
+      let(:params) { { ipv6: true } }
+
+      it do
+        is_expected.to contain_exec('podman_create_network_testing-title').with(
+          {
+            'command' => 'podman network create testing-title --driver bridge --ipv6',
+          },
+        )
+      end
+    end
+
+    context 'with user set to valid testing' do
       let(:params) { { user: 'testing' } }
       let(:pre_condition) do
         "ensure_resource('podman::rootless', 'testing', {})
@@ -133,17 +224,12 @@ describe 'podman::pod' do
       end
 
       it do
-        is_expected.to contain_exec('create_pod_testing-title').only_with(
+        is_expected.to contain_exec('podman_create_network_testing-title').with(
           {
-            'command'     => "podman pod create  --name 'testing-title'",
-            'unless'      => 'podman pod exists testing-title',
-            'path'        => '/sbin:/usr/sbin:/bin:/usr/bin',
+            'user'        => 'testing',
             'environment' => ['HOME=/home/testing', 'XDG_RUNTIME_DIR=/run/user/3333', 'DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/3333/bus'],
             'cwd'         => '/home/testing',
-            'provider'    => 'shell',
-            'user'        => 'testing',
             'require'     => ['Podman::Rootless[testing]', 'Service[podman systemd-logind]'],
-
           },
         )
       end
